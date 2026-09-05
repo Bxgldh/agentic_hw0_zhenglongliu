@@ -96,6 +96,13 @@ _ORDER_COUNTER = [1000]
 #
 # Set model_config = ConfigDict(extra="forbid"), as in Part 2.
 class OrderResult(BaseModel):
+    order_id: str
+    item: str
+    quantity: int
+    total_usd: float = Field(ge=0)
+    eta_minutes: int = Field(ge=0)
+    status: Literal["confirmed"] = "confirmed"
+    model_config = ConfigDict(extra="forbid")
     ...  # <-- your code here (TODO 8)
 
 
@@ -148,6 +155,33 @@ def handle_tool_call(name: str, arguments: dict[str, Any]) -> OrderResult | Tool
     #
     #      MENU[order.item] cannot raise KeyError here. Ask yourself why not,
     #      and which line earned you that guarantee.
+    if name not in ALLOWED_TOOLS:
+        return ToolError(
+            code="unknown_tool",
+            message=f"Tool {name!r} is not allowed",
+            fields=[],
+            retryable=False,
+        )
+    try:
+        order = DeliveryOrder.model_validate(arguments)
+    except ValidationError as exc:
+        return to_tool_error(exc)
+    try:
+        send_to_kitchen(order.item, order.quantity, order.spice, order.notes)
+    except Exception:  # noqa: BLE001
+        return ToolError(
+            code="kitchen_failure",
+            message="The kitchen's fryer is offline and cannot accept this order",
+            fields=[],
+            retryable=False,
+        )
+    return OrderResult(
+        order_id=f"ORD-{next_order_id()}",
+        item=order.item,
+        quantity=order.quantity,
+        total_usd=MENU[order.item] * order.quantity,
+        eta_minutes=10 + order.quantity,
+    )
     raise NotImplementedError("TODO 9 -- see the comment above")
 
 

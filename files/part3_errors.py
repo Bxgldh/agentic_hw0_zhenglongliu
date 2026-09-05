@@ -89,6 +89,15 @@ class DeliveryOrder(BurritoOrder):
     # ValueError and reports it in the same list as everything else it found,
     # so one bad request produces one complete report rather than a series of
     # one-problem-at-a-time failures.
+    @field_validator("address")
+    @classmethod
+    def validate_addr(cls, value: str | None) -> str | None:
+        if value is None:
+            return value
+        stripped_value = value.strip()
+        if stripped_value.lower() not in DELIVERY_ZONE:
+            raise ValueError(f"{stripped_value!r} is not in the delivery zone")
+        return stripped_value
     ...  # <-- your code here (TODO 5)
 
     # TODO 6: Write a validator for a rule that involves two fields at once.
@@ -114,6 +123,13 @@ class DeliveryOrder(BurritoOrder):
     # The second one matters as much as the first. An address on a pickup order
     # means the model misunderstood the request, and a system that silently
     # ignores the extra information will deliver nothing and explain nothing.
+    @model_validator(mode="after")
+    def validate_fulfillment(self) -> "DeliveryOrder":
+        if self.fulfillment == "delivery" and self.address is None:
+            raise ValueError("Delivery orders must have an address")
+        if self.fulfillment == "pickup" and self.address is not None:
+            raise ValueError("Pickup orders should not have an address")
+        return self
     ...  # <-- your code here (TODO 6)
 
 
@@ -179,6 +195,12 @@ def to_tool_error(exc: ValidationError) -> ToolError:
     #              unbounded error message is an unbounded bill.
     #
     #   retryable  True. A model can usually correct its own arguments.
+    errors = exc.errors()
+    fields = sorted({err["loc"][0] for err in errors if err["loc"]})
+    code = "outside_delivery_zone" if any("delivery zone" in err["msg"] for err in errors) else "invalid_arguments"
+    message = f"{len(fields)} field(s) rejected: " + "; ".join(f"{err['loc'][0]}: {err['msg']}" for err in errors if err["loc"])
+    message = message[:200]
+    return ToolError(code=code, message=message, fields=fields, retryable=True)
     raise NotImplementedError("TODO 7 -- see the comment above")
 
 

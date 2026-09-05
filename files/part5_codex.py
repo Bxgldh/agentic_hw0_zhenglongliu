@@ -199,6 +199,18 @@ def structured_request(
     # costs money and time, and a model that is wrong twice in the same way is
     # usually not one attempt away from being right. Real agents set a retry
     # limit for exactly this reason.
+    raw = ask(request)
+    try:
+        order = BurritoOrder.model_validate_json(raw)
+        return order, None, 1
+    except ValidationError as exc:
+        err = to_tool_error(exc)
+        raw = ask(request, err.message)
+        try:
+            order = BurritoOrder.model_validate_json(raw)
+            return order, None, 2
+        except ValidationError as exc:
+            return None, to_tool_error(exc), 2
     raise NotImplementedError("TODO 10 -- see the comment above")
 
 
